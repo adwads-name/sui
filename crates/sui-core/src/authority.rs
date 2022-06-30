@@ -429,7 +429,7 @@ impl AuthorityState {
 
     async fn acquire_tx_guard(&self, cert: &CertifiedTransaction) -> SuiResult<CertTxGuard> {
         let digest = cert.digest();
-        match self.database.wal.begin_tx(digest, cert).await? {
+        match self.database.wal.begin_tx(*digest, cert).await? {
             Some(g) => Ok(g),
             None => {
                 // If the tx previously errored out without committing, we return an

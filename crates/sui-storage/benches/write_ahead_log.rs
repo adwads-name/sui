@@ -31,7 +31,7 @@ fn main() {
             futures.push(tokio::spawn(async move {
                 for _ in 0..num_txes_per_task {
                     let tx = TransactionDigest::random();
-                    let g = wal.begin_tx(&tx, &0).await.unwrap();
+                    let g = wal.begin_tx(tx, &0).await.unwrap();
 
                     if let Some(g) = g {
                         sleep(Duration::from_millis(1)).await;

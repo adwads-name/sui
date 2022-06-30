@@ -53,7 +53,7 @@ pub trait WriteAheadLog<'a, C> {
     /// The possible return values mean:
     ///
     ///   Ok(None) => There was a concurrent instance of the same tx in progress, but it ended
-    ///   witout being committed. The caller may not proceed processing that tx. A TxGuard for
+    ///   without being committed. The caller may not proceed processing that tx. A TxGuard for
     ///   that tx can be (eventually) obtained by calling read_one_recoverable_tx().
     ///
     ///   Ok(Some(TxGuard)) => No other concurrent instance of the same tx is in progress, nor can
@@ -63,8 +63,7 @@ pub trait WriteAheadLog<'a, C> {
     ///
     ///   Err(e) => An error occurred.
     #[must_use]
-    async fn begin_tx(&'a self, tx: &TransactionDigest, cert: &C)
-        -> SuiResult<Option<Self::Guard>>;
+    async fn begin_tx(&'a self, tx: TransactionDigest, cert: &C) -> SuiResult<Option<Self::Guard>>;
 
     /// Recoverable TXes are TXes that we find in the log at start up (which indicates we crashed
     /// while processing them) or implicitly dropped TXes (which can happen because we errored
@@ -97,12 +96,12 @@ where
     C: Serialize + DeserializeOwned,
 {
     fn new(
-        tx: &TransactionDigest,
+        tx: TransactionDigest,
         _mutex_guard: LockGuard<'a>,
         wal: &'a DBWriteAheadLog<C>,
     ) -> Self {
         Self {
-            tx: *tx,
+            tx,
             _mutex_guard,
             wal,
             dead: false,
@@ -260,13 +259,13 @@ where
     #[instrument(level = "debug", name = "begin_tx", skip_all)]
     async fn begin_tx(
         &'a self,
-        tx: &TransactionDigest,
+        tx: TransactionDigest,
         cert: &C,
     ) -> SuiResult<Option<DBTxGuard<'a, C>>> {
-        let mutex_guard = self.mutex_table.acquire_lock(tx).await;
+        let mutex_guard = self.mutex_table.acquire_lock(&tx).await;
         trace!(digest = ?tx, "acquired tx lock");
 
-        if self.log.contains_key(tx)? {
+        if self.log.contains_key(&tx)? {
             // A concurrent tx will have held the mutex guard until it finished. If the tx is
             // committed it is removed from the log. This means that if the tx is still in the
             // log, it was dropped (errored out) and not committed. Return None to indicate
@@ -277,7 +276,7 @@ where
             return Ok(None);
         }
 
-        self.log.insert(tx, cert)?;
+        self.log.insert(&tx, cert)?;
 
         Ok(Some(DBTxGuard::new(tx, mutex_guard, self)))
     }
@@ -290,7 +289,7 @@ where
             None => None,
             Some(digest) => {
                 let guard = self.mutex_table.acquire_lock(&digest).await;
-                Some(DBTxGuard::new(&digest, guard, self))
+                Some(DBTxGuard::new(digest, guard, self))
             }
         }
     }
@@ -328,14 +327,14 @@ mod tests {
             let log: DBWriteAheadLog<u32> = DBWriteAheadLog::new(&working_dir);
             assert!(recover_queue_empty(&log).await);
 
-            let tx1 = log.begin_tx(&tx1_id, &1).await?.unwrap();
+            let tx1 = log.begin_tx(tx1_id, &1).await?.unwrap();
             tx1.commit_tx();
 
-            let tx2 = log.begin_tx(&tx2_id, &2).await?.unwrap();
+            let tx2 = log.begin_tx(tx2_id, &2).await?.unwrap();
             tx2.commit_tx();
 
             {
-                let _tx3 = log.begin_tx(&tx3_id, &3).await?.unwrap();
+                let _tx3 = log.begin_tx(tx3_id, &3).await?.unwrap();
                 // implicit drop
             }
 
